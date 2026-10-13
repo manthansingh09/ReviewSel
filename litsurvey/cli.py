@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import re
 import subprocess
 import shutil
@@ -20,6 +21,21 @@ from .writer import (Writer, assemble, methodology, name_themes, plan_queries,
                      summarize_papers, theme_tables, year_chart)
 
 log = logging.getLogger("litsurvey")
+
+
+def load_dotenv(path: Path = Path(".env")) -> None:
+    """Read KEY=value lines from .env into the environment (real env vars win), so API keys
+    don't have to be typed into every new terminal."""
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, val = line.removeprefix("export ").split("=", 1)
+        key, val = key.strip(), val.strip().strip("\"'")
+        if key and val and not os.environ.get(key):
+            os.environ[key] = val
 
 
 def slug(s: str) -> str:
@@ -158,6 +174,7 @@ def main(argv=None):
     ap.add_argument("-v", "--verbose", action="store_true")
     ap.add_argument("--version", action="version", version=__version__)
     a = ap.parse_args(argv)
+    load_dotenv()
 
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)-7s %(message)s", datefmt="%H:%M:%S")

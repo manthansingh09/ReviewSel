@@ -20,6 +20,26 @@ Output (in `survey_<topic>/`):
 | `papers.json` / `papers_all.json` | Selected / all retrieved records, for reproducibility and re-runs |
 | `report.json` | Stats, themes, uncited papers, and any hallucinated citation keys that were removed |
 
+## API keys
+
+Each service has its own key, and you can use them together, e.g. Claude for writing and Scopus
+for searching. Put them in a `.env` file in the folder you run from; it's loaded automatically
+and git-ignored:
+
+```
+copy .env.example .env      # Windows   (cp .env.example .env on Linux/macOS)
+```
+```
+ANTHROPIC_API_KEY=sk-ant-...
+SCOPUS_API_KEY=...
+```
+```
+python -m litsurvey "k-means clustering" --llm anthropic --sources scopus,openalex,semanticscholar --pdf
+```
+
+Variables already set in the shell (`$env:ANTHROPIC_API_KEY = "..."` in PowerShell, `export` in
+bash) take precedence over `.env`. Note that `$env:` only lasts for that one terminal window.
+
 ## Survey structure
 
 Abstract · Index Terms · I Introduction (with contributions list) · II Survey Methodology

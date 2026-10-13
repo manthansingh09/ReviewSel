@@ -17,3 +17,6 @@ tests/_out*/
 *.blg
 *.log
 *.out
+
+# local secrets
+.env
