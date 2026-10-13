@@ -72,7 +72,7 @@ class LLM:
         else:
             raise ValueError(f"unknown provider {provider}")
         if self.provider == "anthropic" and not self.api_key:
-            raise SystemExit("ANTHROPIC_API_KEY is not set")
+            raise SystemExit("ANTHROPIC_API_KEY is not set (put it in a .env file -- see .env.example)")
 
     @property
     def enabled(self) -> bool:

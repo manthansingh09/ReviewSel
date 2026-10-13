@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>litsurvey</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a64; --line: #e3e1da;
+  --accent: #2d5bd7; --accent-ink: #ffffff; --ok: #1f7a4a; --warn: #a15c00; --bad: #b42318;
+  --code-bg: #15171c; --code-ink: #d9dde6; --soft: #eef2fd;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121316; --panel: #1b1d22; --ink: #e9e8e4; --muted: #9a9a94; --line: #2c2f36;
+    --accent: #7c9cff; --accent-ink: #0d1020; --ok: #4cc38a; --warn: #f0a640; --bad: #ff6b5e;
+    --code-bg: #0b0c0f; --code-ink: #cfd5e1; --soft: #1f2640;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { display: flex; align-items: baseline; gap: 14px; padding: 22px 28px 6px; flex-wrap: wrap; }
+header h1 { margin: 0; font-size: 22px; letter-spacing: -.01em; }
+header p { margin: 0; color: var(--muted); }
+main { display: grid; grid-template-columns: minmax(320px, 430px) 1fr; gap: 20px; padding: 16px 28px 40px; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 12px 16px 32px; } header { padding: 18px 16px 4px; } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+.card h2 { margin: 0 0 12px; font-size: 15px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+.stack > * + * { margin-top: 14px; }
+label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 5px; }
+.hint { color: var(--muted); font-size: 12.5px; font-weight: 400; }
+input[type=text], input[type=number], input[type=password], select, textarea {
+  width: 100%; padding: 9px 11px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--ink); font: inherit; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.topic { font-size: 17px; padding: 12px 13px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border: 1px solid var(--line);
+  border-radius: 999px; cursor: pointer; font-size: 13.5px; user-select: none; background: var(--bg); }
+.chip input { margin: 0; accent-color: var(--accent); }
+.chip:has(input:checked) { border-color: var(--accent); background: var(--soft); }
+.check { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 14px; cursor: pointer; }
+.check input { accent-color: var(--accent); width: 16px; height: 16px; }
+details { border-top: 1px solid var(--line); padding-top: 12px; }
+summary { cursor: pointer; font-weight: 600; font-size: 13.5px; color: var(--muted); }
+details[open] summary { margin-bottom: 12px; }
+button { font: inherit; border-radius: 8px; border: 1px solid var(--line); background: var(--panel);
+  color: var(--ink); padding: 7px 12px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.primary { width: 100%; background: var(--accent); color: var(--accent-ink); border: 0;
+  padding: 12px; font-weight: 650; font-size: 15px; }
+.badge { display: inline-block; font-size: 11.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid currentColor; font-weight: 600; }
+.ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+.err { color: var(--bad); font-size: 13.5px; min-height: 1em; }
+.right { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.jobhead { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.stage { font-weight: 600; }
+.bar { height: 6px; background: var(--line); border-radius: 99px; overflow: hidden; margin: 10px 0 12px; }
+.bar > div { height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+pre.log { margin: 0; background: var(--code-bg); color: var(--code-ink); border-radius: 8px; padding: 12px;
+  height: 300px; overflow: auto; font: 12.5px/1.45 ui-monospace, "Cascadia Code", Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+.log .w { color: #f0b35a; } .log .e { color: #ff7b72; }
+.empty { color: var(--muted); text-align: center; padding: 24px 0; }
+.survey { border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+.survey + .survey { margin-top: 10px; }
+.survey h3 { margin: 0 0 4px; font-size: 16px; }
+.meta { color: var(--muted); font-size: 13px; }
+.themes { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+.themes li { font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.actions a { text-decoration: none; }
+.actions a button { pointer-events: none; }
+.viewer { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; padding: 24px; z-index: 5; }
+.viewer.open { display: flex; flex-direction: column; }
+.viewer .bar2 { display: flex; justify-content: space-between; align-items: center; color: #fff; margin-bottom: 8px; }
+.viewer iframe { flex: 1; border: 0; border-radius: 8px; background: #fff; }
+.keyrow { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>litsurvey</h1>
+  <p>IEEE-format literature surveys from open-access papers</p>
+</header>
+
+<main>
+  <form class="card stack" id="form" autocomplete="off">
+    <h2>New survey</h2>
+    <div>
+      <label for="topic">Topic</label>
+      <input class="topic" type="text" id="topic" name="topic" placeholder="e.g. k-means clustering" required>
+    </div>
+
+    <div>
+      <label for="llm">Writing backend</label>
+      <select id="llm" name="llm">
+        <option value="anthropic">Claude (Anthropic) — full survey prose</option>
+        <option value="openai">OpenAI-compatible API</option>
+        <option value="ollama">Ollama (local model)</option>
+        <option value="none">None — offline draft from abstracts</option>
+      </select>
+    </div>
+
+    <div>
+      <label>Sources</label>
+      <div class="chips" id="sources"></div>
+    </div>
+
+    <div class="row">
+      <div><label for="max_papers">Max papers <span class="hint">0 = all</span></label>
+        <input type="number" id="max_papers" name="max_papers" value="100" min="0"></div>
+      <div><label for="year_from">From year <span class="hint">optional</span></label>
+        <input type="number" id="year_from" name="year_from" placeholder="any" min="1900" max="2100"></div>
+    </div>
+
+    <label class="check"><input type="checkbox" name="pdf" id="pdf" checked> Build PDF <span id="latexBadge"></span></label>
+
+    <details>
+      <summary>API keys</summary>
+      <div class="stack" id="keys"></div>
+      <p class="hint">Keys typed here are used for this run only and aren't saved. To avoid typing them,
+        put them in a <code>.env</code> file next to where you started the server.</p>
+    </details>
+
+    <details>
+      <summary>More options</summary>
+      <div class="stack">
+        <div><label for="title">Title <span class="hint">default: “A Survey on &lt;topic&gt;”</span></label>
+          <input type="text" id="title" name="title"></div>
+        <div><label for="author">Author</label><input type="text" id="author" name="author" placeholder="Author Name"></div>
+        <div><label for="queries">Search queries <span class="hint">separate with “;” — default: planned automatically</span></label>
+          <textarea id="queries" name="queries" rows="2"></textarea></div>
+        <div class="row">
+          <div><label for="themes">Themes <span class="hint">auto</span></label>
+            <input type="number" id="themes" name="themes" min="2" max="30" placeholder="auto"></div>
+          <div><label for="per_query">Per query</label>
+            <input type="number" id="per_query" name="per_query" value="60" min="5" max="500"></div>
+        </div>
+        <div><label for="model">Model <span class="hint">blank = backend default</span></label>
+          <input type="text" id="model" name="model"></div>
+        <div><label for="base_url">Base URL <span class="hint">OpenAI-compatible endpoints only</span></label>
+          <input type="text" id="base_url" name="base_url"></div>
+        <label class="check"><input type="checkbox" name="critic"> Critic pass <span class="hint">checks claims against abstracts, ~2× LLM calls</span></label>
+        <label class="check"><input type="checkbox" name="include_closed"> Include closed-access papers</label>
+      </div>
+    </details>
+
+    <div class="err" id="formErr"></div>
+    <button class="primary" type="submit" id="go">Generate survey</button>
+  </form>
+
+  <div class="right">
+    <section class="card" id="jobCard" hidden>
+      <div class="jobhead">
+        <div><span class="stage" id="stage">Starting…</span> <span class="meta" id="jobLabel"></span></div>
+        <button id="cancel" type="button">Cancel</button>
+      </div>
+      <div class="bar"><div id="barFill"></div></div>
+      <pre class="log" id="log"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Your surveys</h2>
+      <div id="surveys"><div class="empty">Loading…</div></div>
+    </section>
+  </div>
+</main>
+
+<div class="viewer" id="viewer">
+  <div class="bar2"><strong id="viewerTitle"></strong><button id="closeViewer" type="button">Close</button></div>
+  <iframe id="viewerFrame" title="PDF preview"></iframe>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const SRC_NAMES = {arxiv: "arXiv", semanticscholar: "Semantic Scholar", openalex: "OpenAlex", scopus: "Scopus"};
+const KEYS = [
+  ["ANTHROPIC_API_KEY", "Anthropic API key", "for the Claude backend"],
+  ["SCOPUS_API_KEY", "Scopus API key", "for the Scopus source"],
+  ["SCOPUS_INSTTOKEN", "Scopus institutional token", "optional, off-campus access"],
+  ["OPENAI_API_KEY", "OpenAI-compatible API key", "for the OpenAI backend"],
+];
+let STATUS = null, job = null, since = 0, timer = null, searchesTotal = 0, searchesDone = 0;
+
+async function api(path, body) {
+  const r = await fetch(path, body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : {});
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+  return data;
+}
+
+async function loadStatus() {
+  STATUS = await api("/api/status");
+  const defaults = ["arxiv", "semanticscholar", "openalex"];
+  $("#sources").innerHTML = STATUS.sources.map(s =>
+    `<label class="chip"><input type="checkbox" name="sources" value="${s}" ${defaults.includes(s) || (s === "scopus" && STATUS.keys.SCOPUS_API_KEY) ? "checked" : ""}> ${SRC_NAMES[s] || s}</label>`).join("");
+  $("#keys").innerHTML = KEYS.map(([k, label, hint]) => `
+    <div><label for="${k}">${label} <span class="hint">${hint}</span></label>
+      <div class="keyrow"><input type="password" id="${k}" data-key="${k}" placeholder="${STATUS.keys[k] ? "using key from .env / environment" : "not set"}">
+      ${STATUS.keys[k] ? '<span class="badge ok">set</span>' : '<span class="badge warn">missing</span>'}</div></div>`).join("");
+  $("#latexBadge").innerHTML = STATUS.latex ? "" :
+    '<span class="badge warn" title="Install MiKTeX or TeX Live, then restart the server">LaTeX not found</span>';
+}
+
+function formData() {
+  const f = $("#form"), d = {};
+  for (const el of f.elements) {
+    if (!el.name || el.dataset.key) continue;
+    if (el.type === "checkbox") { if (el.name === "sources") (d.sources ||= []), el.checked && d.sources.push(el.value); else d[el.name] = el.checked; }
+    else d[el.name] = el.value;
+  }
+  const keys = {};
+  document.querySelectorAll("[data-key]").forEach(el => { if (el.value.trim()) keys[el.dataset.key] = el.value.trim(); });
+  return {form: d, keys};
+}
+
+function checkKeys(d) {
+  const have = k => STATUS.keys[k] || d.keys[k];
+  if (d.form.llm === "anthropic" && !have("ANTHROPIC_API_KEY")) return "Add your Anthropic API key under “API keys”, or choose another backend.";
+  if (d.form.llm === "openai" && !have("OPENAI_API_KEY")) return "Add an OpenAI-compatible API key under “API keys”.";
+  if ((d.form.sources || []).includes("scopus") && !have("SCOPUS_API_KEY")) return "Scopus needs an API key — add it under “API keys” or untick Scopus.";
+  if (!(d.form.sources || []).length) return "Pick at least one source.";
+  return "";
+}
+
+$("#form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const d = formData(), problem = checkKeys(d);
+  $("#formErr").textContent = problem;
+  if (problem) { if (problem.includes("API key")) $("details").open = true; return; }
+  try { startJob(await api("/api/jobs", d), d.form.sources.length); }
+  catch (err) { $("#formErr").textContent = err.message; }
+});
+
+function startJob(j, nSources = 0) {
+  job = j; since = 0; searchesTotal = 0; searchesDone = 0; window._nSources = nSources;
+  $("#jobCard").hidden = false; $("#log").innerHTML = "";
+  $("#jobLabel").textContent = "— " + j.label; $("#cancel").disabled = false;
+  setProgress("Starting…", 2); $("#go").disabled = true;
+  clearInterval(timer); timer = setInterval(poll, 1000); poll();
+}
+
+function setProgress(stage, pct) {
+  $("#stage").textContent = stage;
+  if (pct != null) $("#barFill").style.width = Math.max(2, Math.min(100, pct)) + "%";
+}
+
+function track(line) {
+  let m;
+  if (/checking .* access/.test(line)) setProgress("Checking API key…", 3);
+  else if ((m = line.match(/queries: \[(.*)\]/))) { searchesTotal = (m[1].match(/', '|", "/g) || []).length + 1; searchesTotal *= window._nSources || 3; setProgress("Searching…", 5); }
+  else if (/ searching /.test(line)) { searchesDone++; setProgress(`Searching… (${searchesDone}${searchesTotal ? "/" + searchesTotal : ""})`, 5 + 40 * (searchesTotal ? searchesDone / searchesTotal : 0.5)); }
+  else if (/unique candidate papers/.test(line)) setProgress("Ranking and grouping papers…", 47);
+  else if ((m = line.match(/selected (\d+) papers in (\d+) themes/))) setProgress(`Selected ${m[1]} papers in ${m[2]} themes`, 50);
+  else if (/writing abstract/.test(line)) setProgress("Writing introduction & background…", 55);
+  else if ((m = line.match(/writing theme (\d+)\/(\d+): (.*)/))) setProgress(`Writing theme ${m[1]}/${m[2]}: ${m[3]}`, 55 + 35 * (m[1] - 1) / m[2]);
+  else if (/writing discussion/.test(line)) setProgress("Writing discussion & conclusion…", 91);
+  else if (/building PDF/.test(line)) setProgress("Building PDF…", 96);
+}
+
+async function poll() {
+  if (!job) return;
+  let v;
+  try { v = await api(`/api/jobs/${job.id}?since=${since}`); } catch { return; }
+  since = v.next;
+  const log = $("#log"), atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+  for (const line of v.lines) {
+    track(line);
+    const cls = /WARNING/.test(line) ? "w" : /ERROR|Traceback|Error:/.test(line) ? "e" : "";
+    log.insertAdjacentHTML("beforeend", (cls ? `<span class="${cls}">${esc(line)}</span>` : esc(line)) + "\n");
+  }
+  if (atBottom) log.scrollTop = log.scrollHeight;
+  if (v.status !== "running") {
+    clearInterval(timer); $("#go").disabled = false; $("#cancel").disabled = true;
+    setProgress({done: "Done ✓", failed: "Failed — see the log", cancelled: "Cancelled"}[v.status], v.status === "done" ? 100 : null);
+    $("#stage").className = "stage " + (v.status === "done" ? "ok" : "bad");
+    loadSurveys();
+  } else $("#stage").className = "stage";
+}
+
+$("#cancel").addEventListener("click", async () => { if (job) await api(`/api/jobs/${job.id}/cancel`, {}); });
+
+const ago = t => { const s = Date.now() / 1000 - t; return s < 3600 ? Math.max(1, Math.round(s / 60)) + " min ago" : s < 86400 ? Math.round(s / 3600) + " h ago" : new Date(t * 1000).toLocaleDateString(); };
+
+async function loadSurveys() {
+  const rows = await api("/api/surveys").catch(() => []);
+  $("#surveys").innerHTML = rows.length ? rows.map(s => {
+    const f = n => `/files/${encodeURIComponent(s.dir)}/${encodeURIComponent(n)}`, has = n => s.files.includes(n);
+    return `<div class="survey">
+      <h3>${esc(s.topic)}</h3>
+      <div class="meta">${s.papers ? s.papers + " papers · " : ""}${esc(s.llm || "")} · ${ago(s.updated)} · <code>${esc(s.dir)}</code></div>
+      ${s.themes.length ? `<ul class="themes">${s.themes.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
+      <div class="actions">
+        ${has("survey.pdf") ? `<button type="button" data-view="${f("survey.pdf")}" data-title="${esc(s.topic)}">View PDF</button>
+          <a href="${f("survey.pdf")}" download><button type="button">Download PDF</button></a>` : ""}
+        <a href="${f("survey.tex")}" download><button type="button">survey.tex</button></a>
+        ${has("refs.bib") ? `<a href="${f("refs.bib")}" download><button type="button">refs.bib</button></a>` : ""}
+        ${has("report.json") ? `<a href="${f("report.json")}" target="_blank"><button type="button">report</button></a>` : ""}
+        <button type="button" data-pdf="${esc(s.dir)}" ${STATUS && !STATUS.latex ? 'disabled title="Install MiKTeX or TeX Live, then restart the server"' : ""} ${s.running ? "disabled" : ""}>${has("survey.pdf") ? "Rebuild PDF" : "Build PDF"}</button>
+      </div></div>`;
+  }).join("") : `<div class="empty">No surveys yet — generate one on the left.</div>`;
+}
+
+$("#surveys").addEventListener("click", async e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.view) { $("#viewerTitle").textContent = b.dataset.title; $("#viewerFrame").src = b.dataset.view; $("#viewer").classList.add("open"); }
+  if (b.dataset.pdf) { try { startJob(await api("/api/pdf", {dir: b.dataset.pdf})); } catch (err) { alert(err.message); } }
+});
+$("#closeViewer").addEventListener("click", () => { $("#viewer").classList.remove("open"); $("#viewerFrame").src = "about:blank"; });
+document.addEventListener("keydown", e => { if (e.key === "Escape") $("#closeViewer").click(); });
+
+(async () => {
+  await loadStatus().catch(err => $("#formErr").textContent = "Can't reach the server: " + err.message);
+  await loadSurveys();
+  const running = (await api("/api/jobs").catch(() => [])).find(j => j.status === "running");
+  if (running) startJob(running);   // re-attach after a page reload
+})();
+</script>
+</body>
+</html>

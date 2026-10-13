@@ -7,3 +7,19 @@ __pycache__/
 venv/
 .idea/
 .vscode/
+
+# test outputs
+tests/_out*/
+
+# LaTeX build by-products
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+
+# local secrets
+.env
+
+# generated surveys (keep them out of the repo)
+survey_*/

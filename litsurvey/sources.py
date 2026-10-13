@@ -1,4 +1,5 @@
-"""Paper search backends: arXiv, Semantic Scholar, OpenAlex (all free/open APIs)."""
+"""Paper search backends: arXiv, Semantic Scholar, OpenAlex (free/open APIs) and Scopus
+(Elsevier API key required)."""
 from __future__ import annotations
 
 import hashlib
@@ -28,6 +29,7 @@ class Http:
         "export.arxiv.org": 3.5,
         "api.semanticscholar.org": 1.5,
         "api.openalex.org": 0.2,
+        "api.elsevier.com": 0.15,   # Scopus allows ~9 requests/s
     }
     BACKOFF = {"export.arxiv.org": 10.0, "api.semanticscholar.org": 5.0}  # first back-off (s)
     TIMEOUT = {"export.arxiv.org": 90}
@@ -43,6 +45,7 @@ class Http:
         self.session.headers["User-Agent"] = UA
         self._last: dict[str, float] = {}
         self.failures: dict[str, int] = {}
+        self.last_status: int | None = None   # HTTP status of the latest non-cached request
 
     def disabled(self, host: str) -> bool:
         return self.failures.get(host, 0) >= self.MAX_FAILURES
@@ -71,6 +74,7 @@ class Http:
                 time.sleep(delay)
                 delay = min(delay * 2, self.MAX_WAIT)
                 continue
+            self.last_status = r.status_code
             if r.status_code == 200:
                 self.failures[host] = 0
                 if cpath:
@@ -335,6 +339,153 @@ def search_openalex(http: Http, query: str, limit: int = 50, year_from: int | No
     return out
 
 
+# -------------------------------------------------------------------- Scopus
+SCOPUS_URL = "https://api.elsevier.com/content/search/scopus"
+SCOPUS_PAGE = 25          # max page size for the COMPLETE view
+
+
+def scopus_key() -> str:
+    return os.getenv("SCOPUS_API_KEY") or os.getenv("ELSEVIER_API_KEY") or ""
+
+
+def _scopus_query(q: str, year_from: int | None, open_only: bool) -> str:
+    """Plain search text -> Scopus advanced query: content words AND-ed inside
+    TITLE-ABS-KEY(), quoted phrases kept as phrases, Boolean words dropped."""
+    import shlex
+    try:
+        parts = shlex.split(q.replace("'", " "))
+    except ValueError:
+        parts = q.replace('"', " ").split()
+    terms = []
+    for part in parts:
+        part = re.sub(r"[^\w\s+-]", " ", part).strip()
+        if not part:
+            continue
+        if " " in part:
+            terms.append(f'"{part}"')
+        elif part.lower() not in _QSTOP | {"not", "near", "pre", "w"}:
+            terms.append(part)
+    query = f"TITLE-ABS-KEY({' AND '.join(terms) or q})"
+    if year_from:
+        query += f" AND PUBYEAR > {year_from - 1}"
+    if open_only:
+        query += " AND OPENACCESS(1)"
+    return query
+
+
+def parse_scopus_entry(e: dict) -> Paper | None:
+    title = e.get("dc:title")
+    if not title or e.get("error"):
+        return None
+    authors = []
+    for a in e.get("author") or []:          # COMPLETE view: full author list
+        name = " ".join(x for x in (a.get("given-name"), a.get("surname")) if x)
+        if name or a.get("authname"):
+            authors.append(name or a["authname"])
+    if not authors and e.get("dc:creator"):  # STANDARD view: first author only
+        authors = [e["dc:creator"]]
+    agg = (e.get("prism:aggregationType") or "").lower()
+    sub = (e.get("subtypeDescription") or "").lower()
+    if "conference" in agg or "conference" in sub:
+        vtype = "conference"
+    elif "journal" in agg:
+        vtype = "journal"
+    else:
+        vtype = "other"
+    pages = (e.get("prism:pageRange") or "").strip()
+    if pages and "-" in pages and "--" not in pages:
+        pages = pages.replace("-", "--", 1)
+    pages = pages or str(e.get("article-number") or "")
+    year = (e.get("prism:coverDate") or "")[:4]
+    url = next((l.get("@href", "") for l in e.get("link") or [] if l.get("@ref") == "scopus"), "")
+    doi = clean_doi(e.get("prism:doi") or "")
+    return Paper(
+        title=" ".join(title.split()),
+        authors=authors,
+        year=int(year) if year.isdigit() else None,
+        abstract=" ".join((e.get("dc:description") or "").split()),
+        venue=e.get("prism:publicationName") or "",
+        venue_type=vtype,
+        doi=doi,
+        url=f"https://doi.org/{doi}" if doi else url,
+        volume=str(e.get("prism:volume") or ""),
+        issue=str(e.get("prism:issueIdentifier") or ""),
+        pages=pages,
+        citations=int(e.get("citedby-count") or 0),
+        is_open=e.get("openaccessFlag") in (True, "true") or str(e.get("openaccess")) == "1",
+        sources={"scopus"},
+    )
+
+
+class _ScopusState:
+    view = "COMPLETE"     # falls back to STANDARD (no abstracts) for keys without entitlement
+    warned = False
+
+
+def search_scopus(http: Http, query: str, limit: int = 50, year_from: int | None = None,
+                  open_only: bool = True) -> list[Paper]:
+    key = scopus_key()
+    if not key:
+        if not _ScopusState.warned:
+            log.warning("scopus selected but SCOPUS_API_KEY is not set; skipping Scopus "
+                        "(get a key at https://dev.elsevier.com)")
+            _ScopusState.warned = True
+        return []
+    headers = {"X-ELS-APIKey": key, "Accept": "application/json"}
+    if os.getenv("SCOPUS_INSTTOKEN"):
+        headers["X-ELS-Insttoken"] = os.environ["SCOPUS_INSTTOKEN"]
+    out: list[Paper] = []
+    start = 0
+    while start < limit:
+        params = {"query": _scopus_query(query, year_from, open_only), "start": start,
+                  "count": min(SCOPUS_PAGE, limit - start), "view": _ScopusState.view,
+                  "sort": "relevancy"}
+        data = http.get(SCOPUS_URL + "?" + urlencode(params), headers=headers)
+        if data is None and http.last_status in (401, 403) and _ScopusState.view == "COMPLETE":
+            log.warning("Scopus key not entitled to the COMPLETE view; using STANDARD view "
+                        "(no abstracts -- they are filled in from OpenAlex by DOI)")
+            _ScopusState.view = "STANDARD"
+            continue
+        if data is None and http.last_status in (401, 403):
+            log.warning("Scopus refused the API key (HTTP %s). Check SCOPUS_API_KEY; Scopus "
+                        "usually also requires an institutional network/VPN or SCOPUS_INSTTOKEN.",
+                        http.last_status)
+            http.failures["api.elsevier.com"] = Http.MAX_FAILURES   # don't retry every query
+            break
+        res = (data or {}).get("search-results") or {}
+        entries = [e for e in res.get("entry") or [] if not e.get("error")]
+        if not entries:
+            break
+        out.extend(p for p in map(parse_scopus_entry, entries) if p)
+        start += len(entries)
+        if start >= int(res.get("opensearch:totalResults") or 0):
+            break
+    return out
+
+
+def fill_abstracts(http: Http, papers: list[Paper], batch: int = 50) -> int:
+    """Look up missing abstracts on OpenAlex by DOI (Scopus' STANDARD view has none)."""
+    need = [p for p in papers if not p.abstract and p.doi]
+    filled = 0
+    for i in range(0, len(need), batch):
+        chunk = {p.doi: p for p in need[i:i + batch]}
+        params = {"filter": "doi:" + "|".join(chunk), "per-page": batch}
+        if os.getenv("OPENALEX_EMAIL"):
+            params["mailto"] = os.environ["OPENALEX_EMAIL"]
+        data = http.get("https://api.openalex.org/works?" + urlencode(params))
+        for w in (data or {}).get("results") or []:
+            p = chunk.get(clean_doi(w.get("doi") or ""))
+            abstract = _undo_inverted_index(w.get("abstract_inverted_index"))
+            if p and abstract:
+                p.abstract = abstract
+                p.is_open = p.is_open or bool((w.get("open_access") or {}).get("is_oa"))
+                p.pdf_url = p.pdf_url or (w.get("open_access") or {}).get("oa_url") or ""
+                filled += 1
+    if need:
+        log.info("filled %d/%d missing abstracts from OpenAlex", filled, len(need))
+    return filled
+
+
 # ------------------------------------------------------------- aggregation
 def deduplicate(papers: list[Paper]) -> list[Paper]:
     """Merge records of the same work found via different sources/queries."""
@@ -361,12 +512,14 @@ def deduplicate(papers: list[Paper]) -> list[Paper]:
 
 SOURCE_HOSTS = {"arxiv": "export.arxiv.org",
                 "semanticscholar": "api.semanticscholar.org",
-                "openalex": "api.openalex.org"}
+                "openalex": "api.openalex.org",
+                "scopus": "api.elsevier.com"}
 
 SOURCES = {
     "arxiv": lambda http, q, n, yf, oo: search_arxiv(http, q, n),
     "semanticscholar": lambda http, q, n, yf, oo: search_semantic_scholar(http, q, n, yf),
     "openalex": lambda http, q, n, yf, oo: search_openalex(http, q, n, yf, oo),
+    "scopus": lambda http, q, n, yf, oo: search_scopus(http, q, n, yf, oo),
 }
 
 
@@ -389,6 +542,8 @@ def collect(queries: list[str], sources: list[str], per_query: int, http: Http,
     stats["total_retrieved"] = len(raw)
     papers = deduplicate(raw)
     stats["after_dedup"] = len(papers)
+    if "scopus" in sources:
+        fill_abstracts(http, papers)
     if year_from:
         papers = [p for p in papers if not p.year or p.year >= year_from]
     if open_only:
