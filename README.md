@@ -10,6 +10,19 @@ pip install -r requirements.txt
 python -m litsurvey "retrieval-augmented generation" --llm anthropic --pdf
 ```
 
+Prefer a browser? Start the local web UI (no extra installs) and it opens at
+<http://localhost:8000>:
+
+```
+python -m litsurvey.web            # --port 8080 to change the port, --no-browser to not open a tab
+```
+
+Fill in the topic, pick the writing backend and sources (including Scopus), and press **Generate
+survey**. The page shows live progress and the log, and lists every `survey_*` folder with
+**View PDF**, downloads for `survey.tex` / `refs.bib`, and a **Build PDF** button for surveys
+that don't have one yet. Keys come from your `.env`; ones typed into the page are used for that
+run only and never saved. The server listens on `127.0.0.1` only, so other machines can't reach it.
+
 Output (in `survey_<topic>/`):
 
 | File | What it is |

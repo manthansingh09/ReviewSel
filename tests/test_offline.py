@@ -213,10 +213,28 @@ def test_llm_path(tmp=Path(__file__).parent / "_out_llm"):
     assert "ghost2099paper" not in tex and "Retriever Architectures" in tex
 
 
+def test_web_argv():
+    from litsurvey.web import build_argv
+    argv, out = build_argv({"topic": "  k-means  clustering ", "llm": "anthropic",
+                            "sources": ["scopus", "openalex", "evil; rm"], "max_papers": "50",
+                            "year_from": "", "pdf": True, "title": "My Survey"})
+    assert out == "survey_k_means_clustering"
+    assert argv[:3] == ["k-means clustering", "-o", out]
+    assert argv[argv.index("--sources") + 1] == "scopus,openalex"
+    assert "--pdf" in argv and "--year-from" not in argv and "My Survey" in argv
+    for bad in ({"topic": ""}, {"topic": "x", "llm": "gpt"}, {"topic": "x", "sources": []}):
+        try:
+            build_argv(bad)
+            raise AssertionError(bad)
+        except ValueError:
+            pass
+
+
 if __name__ == "__main__":
     test_parsers_and_dedup()
     test_scopus()
     test_bib_and_sanitizer()
     test_end_to_end()
     test_llm_path()
+    test_web_argv()
     print("all tests passed")
