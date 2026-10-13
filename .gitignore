@@ -20,3 +20,6 @@ tests/_out*/
 
 # local secrets
 .env
+
+# generated surveys (keep them out of the repo)
+survey_*/
