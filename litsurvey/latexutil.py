@@ -52,7 +52,23 @@ def _escape_outside_math(seg: str) -> str:
     seg = re.sub(r"(?<!\\)([&%#])", r"\\\1", seg)
     seg = re.sub(r"(?<![\\])_", r"\\_", seg)
     seg = re.sub(r"(?<!\\)\^", r"\\textasciicircum{}", seg)
+    seg = re.sub(r"(?<!\\)\$", r"\\$", seg)                   # a lone $ would open math mode
+    seg = re.sub(r"(?<!\\)\\\|", r"$\\|$", seg)              # \| is math-only (e.g. k-means\|)
     return seg
+
+
+def _close_braces(body: str) -> str:
+    """Close \\cite{... left open (LLM output cut off at the token limit) and any other
+    unbalanced '{' so one truncated section can't break the whole PDF build."""
+    body = re.sub(r"(\\cite[pt]?\{[^}]*?)(\s*)(?=\n\s*\n|\Z)", r"\1}\2", body)
+    depth = 0
+    for m in re.finditer(r"\\.|[{}]", body):
+        t = m.group()
+        if t == "{":
+            depth += 1
+        elif t == "}":
+            depth = max(depth - 1, 0)
+    return body.rstrip() + "}" * depth
 
 
 def sanitize_llm_latex(body: str) -> str:
@@ -70,7 +86,7 @@ def sanitize_llm_latex(body: str) -> str:
     parts = re.split(r"(\$[^$]+\$|\\\(.+?\\\)|\\(?:cite|ref|label|url)\{[^}]*\})", body)
     for i in range(0, len(parts), 2):
         parts[i] = _unicode(_escape_outside_math(parts[i]))
-    body = "".join(parts)
+    body = _close_braces("".join(parts))
     # drop list environments that were opened but never closed (and vice versa)
     for env in ("itemize", "enumerate"):
         o, c = body.count(f"\\begin{{{env}}}"), body.count(f"\\end{{{env}}}")

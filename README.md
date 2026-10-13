@@ -1,6 +1,6 @@
 # litsurvey — IEEE-format literature surveys from open-access papers
 
-Give it a topic; it searches **arXiv, Semantic Scholar and OpenAlex**, keeps open-access works,
+Give it a topic; it searches **arXiv, Semantic Scholar, OpenAlex** and optionally **Scopus**, keeps open-access works,
 merges duplicates, ranks by relevance, groups papers into themes, and writes a complete
 **IEEEtran `.tex` survey with a `refs.bib` in IEEE citation style**. There is no page limit —
 the survey grows with the number of papers you let it include.
@@ -16,7 +16,7 @@ Output (in `survey_<topic>/`):
 |---|---|
 | `survey.tex` | The survey. `refs.bib` is embedded via `filecontents`, so this one file compiles on Overleaf as-is |
 | `refs.bib` | IEEE-ready BibTeX (published version preferred over the arXiv preprint; DOIs; arXiv IDs) |
-| `survey.pdf` | With `--pdf` and a local TeX install (needs the `IEEEtran` class — `texlive-publishers`) |
+| `survey.pdf` | With `--pdf` and a local TeX install (see [Building the PDF](#building-the-pdf)) |
 | `papers.json` / `papers_all.json` | Selected / all retrieved records, for reproducibility and re-runs |
 | `report.json` | Stats, themes, uncited papers, and any hallucinated citation keys that were removed |
 
@@ -51,15 +51,58 @@ abstracts and removes unsupported claims (roughly doubles LLM calls).
 --queries "a; b; c"     your own search queries instead of planned ones
 --themes 6              fix the number of themed sections (default: auto)
 --year-from 2019        exclude older work
---sources arxiv,openalex
+--sources arxiv,openalex,scopus
 --include-closed        also keep works without an open-access copy
 --title "..." --author "..."
 --from-json out/papers_all.json   re-write without searching again
+--pdf-only              only (re)build survey.pdf from an existing survey.tex
 --min-relevance 0.05    loosen/tighten the relevance cut-off
 ```
 
-Optional environment variables: `S2_API_KEY` (higher Semantic Scholar rate limit),
+Optional environment variables: `SCOPUS_API_KEY` (enables `--sources scopus`), `S2_API_KEY` (higher Semantic Scholar rate limit),
 `OPENALEX_EMAIL` (polite pool), `OPENALEX_API_KEY`.
+
+## Scopus
+
+Scopus is not open, so it needs an Elsevier API key (free at <https://dev.elsevier.com>):
+
+```
+# PowerShell
+$env:SCOPUS_API_KEY = "your-elsevier-key"
+# bash
+export SCOPUS_API_KEY=your-elsevier-key
+
+python -m litsurvey "k-means clustering" --sources scopus,openalex,semanticscholar --llm anthropic --pdf
+```
+
+- Queries are sent as `TITLE-ABS-KEY(...)`, with `PUBYEAR > N` for `--year-from` and
+  `OPENACCESS(1)` unless `--include-closed` is given.
+- Elsevier only serves Scopus to subscribing institutions: run on your campus network/VPN, or
+  set `SCOPUS_INSTTOKEN` if your library issued an institutional token.
+- Keys without the `COMPLETE` view get no abstracts or full author lists; litsurvey then falls
+  back to the `STANDARD` view and fills missing abstracts from OpenAlex by DOI (papers with no
+  abstract anywhere are dropped by the ranking step). Keep `openalex` in `--sources` for best results.
+- `ELSEVIER_API_KEY` is accepted as an alias for `SCOPUS_API_KEY`.
+
+## Building the PDF
+
+`--pdf` runs `pdflatex → bibtex → pdflatex ×2` (or `tectonic` if that is what you have). You need
+a LaTeX distribution on `PATH`:
+
+- **Windows:** install [MiKTeX](https://miktex.org/download) (or TeX Live), then open a *new*
+  terminal so `pdflatex` is on `PATH`. MiKTeX downloads `IEEEtran`/`pgfplots` on first use.
+- **Linux:** `sudo apt install texlive-latex-extra texlive-publishers texlive-pictures`
+- **macOS:** MacTeX.
+
+If LaTeX is missing the run says so and still writes `survey.tex`; after installing, rebuild only
+the PDF (no searching or LLM calls) with:
+
+```
+python -m litsurvey "k-means clustering" --pdf-only
+```
+
+Any LaTeX errors are printed with their line numbers. Without a local install, upload
+`survey.tex` to Overleaf — `refs.bib` is embedded in it.
 
 ## Notes
 

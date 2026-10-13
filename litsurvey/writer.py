@@ -441,14 +441,16 @@ def year_chart(papers: list[Paper]) -> tuple[str, str]:
 
 def methodology(topic: str, queries: list[str], sources: list[str], stats: dict,
                 n_final: int, papers: list[Paper], year_from, max_papers, open_only) -> str:
-    names = {"arxiv": "arXiv", "semanticscholar": "Semantic Scholar", "openalex": "OpenAlex"}
+    names = {"arxiv": "arXiv", "semanticscholar": "Semantic Scholar", "openalex": "OpenAlex",
+             "scopus": "Scopus"}
     src_rows = "\n".join(f"{names.get(s, s)} & {stats.get(s, 0)} \\\\" for s in sources)
     types = Counter(p.venue_type or "other" for p in papers)
     qlist = "\n".join(f"\\item \\texttt{{{escape(q)}}}" for q in queries)
     return (
         f"The literature was collected on {date.today():%B %d, %Y} from "
-        f"{', '.join(names.get(s, s) for s in sources)}, which index openly accessible "
-        "scholarly works. The following search queries were issued to every source:\n"
+        f"{', '.join(names.get(s, s) for s in sources)}, which index "
+        + ("peer-reviewed and openly accessible" if "scopus" in sources else "openly accessible")
+        + " scholarly works. The following search queries were issued to every source:\n"
         f"\\begin{{itemize}}\n{qlist}\n\\end{{itemize}}\n\n"
         "Records of the same work returned by different sources or queries were merged using "
         "DOI, arXiv identifier and normalised title; when a preprint had a published version, "

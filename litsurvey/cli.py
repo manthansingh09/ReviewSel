@@ -15,7 +15,7 @@ from .latexutil import build_bib, escape, make_keys
 from .llm import LLM
 from .models import Paper
 from .ranking import cluster, rank
-from .sources import Http, collect
+from .sources import SOURCES, Http, collect, scopus_key
 from .writer import (Writer, assemble, methodology, name_themes, plan_queries,
                      summarize_papers, theme_tables, year_chart)
 
@@ -45,20 +45,77 @@ def save_papers(path: Path, papers, stats, queries):
                                indent=1, ensure_ascii=False), encoding="utf-8")
 
 
+def _tex_errors(log_path: Path, n: int = 5) -> list[str]:
+    """First few '! ...' error lines from a LaTeX log, with their line numbers."""
+    if not log_path.exists():
+        return []
+    lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    errs = []
+    for i, line in enumerate(lines):
+        if line.startswith("!"):
+            where = next((l.strip() for l in lines[i + 1:i + 8] if re.match(r"l\.\d+", l)), "")
+            errs.append(f"{line} {where[:80]}".strip())
+            if len(errs) >= n:
+                break
+    return errs
+
+
 def compile_pdf(tex: Path) -> bool:
-    if not shutil.which("pdflatex") or not shutil.which("bibtex"):
-        log.info("pdflatex/bibtex not found; skipping PDF build")
+    """Build <tex>.pdf with pdflatex+bibtex (TeX Live / MiKTeX) or, failing that, tectonic."""
+    cwd, stem = tex.parent.resolve(), tex.stem
+    pdf = cwd / f"{stem}.pdf"
+
+    def run(cmd):
+        try:
+            r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", timeout=600, stdin=subprocess.DEVNULL)
+            return r.returncode
+        except (OSError, subprocess.SubprocessError) as e:
+            log.warning("%s failed to run: %s", cmd[0], e)
+            return -1
+
+    pdflatex, bibtex, tectonic = (shutil.which(x) for x in ("pdflatex", "bibtex", "tectonic"))
+    if not (pdflatex and bibtex) and not tectonic:
+        log.warning("PDF not built: no LaTeX found on PATH (need pdflatex + bibtex, or tectonic).\n"
+                    "  Windows: install MiKTeX (https://miktex.org/download) or TeX Live, then open a "
+                    "NEW terminal so PATH updates.\n"
+                    "  Linux: sudo apt install texlive-latex-extra texlive-publishers "
+                    "texlive-pictures  |  macOS: MacTeX\n"
+                    "  Or upload %s to Overleaf (refs.bib is embedded in it).\n"
+                    "  Re-run just the PDF step later with:  --pdf-only", tex)
         return False
-    cwd, stem = tex.parent, tex.stem
-    run = lambda cmd: subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=600)
-    run(["pdflatex", "-interaction=nonstopmode", tex.name])
-    run(["bibtex", stem])
-    run(["pdflatex", "-interaction=nonstopmode", tex.name])
-    r = run(["pdflatex", "-interaction=nonstopmode", tex.name])
-    ok = (cwd / f"{stem}.pdf").exists()
-    if not ok:
-        log.warning("PDF build failed; see %s.log", stem)
-    return ok
+    if pdf.exists():
+        pdf.unlink()  # so a stale PDF is never mistaken for a fresh build
+    if pdflatex and bibtex:
+        cmd = [pdflatex, "-interaction=nonstopmode", "-file-line-error"]
+        ver = subprocess.run([pdflatex, "--version"], capture_output=True, text=True,
+                             errors="replace", stdin=subprocess.DEVNULL).stdout
+        if "MiKTeX" in ver:  # let MiKTeX fetch IEEEtran/pgfplots without a GUI prompt
+            cmd.append("--enable-installer")
+        elif shutil.which("kpsewhich") and not subprocess.run(
+                ["kpsewhich", "IEEEtran.cls"], capture_output=True, text=True).stdout.strip():
+            log.warning("IEEEtran.cls not found; install texlive-publishers (TeX Live) "
+                        "or the 'ieeetran' package (tlmgr install ieeetran)")
+        log.info("building PDF with pdflatex + bibtex ...")
+        run(cmd + [tex.name])
+        if run([bibtex, stem]) not in (0, 1):  # 1 = bibtex warnings only
+            log.warning("bibtex reported errors; see %s", cwd / f"{stem}.blg")
+        run(cmd + [tex.name])
+        run(cmd + [tex.name])
+    else:
+        log.info("building PDF with tectonic ...")
+        run([tectonic, "--keep-logs", tex.name])
+    errors = _tex_errors(cwd / f"{stem}.log")
+    if not pdf.exists():
+        log.warning("PDF build failed; see %s", cwd / f"{stem}.log")
+        for e in errors:
+            log.warning("  %s", e)
+        return False
+    if errors:
+        log.warning("PDF built, but LaTeX reported errors (check those spots in the PDF):")
+        for e in errors:
+            log.warning("  %s", e)
+    return True
 
 
 def main(argv=None):
@@ -71,7 +128,8 @@ def main(argv=None):
     ap.add_argument("--title", default=None)
     ap.add_argument("--author", default="Author Name")
     ap.add_argument("--sources", default="arxiv,semanticscholar,openalex",
-                    help="comma list of: arxiv, semanticscholar, openalex")
+                    help="comma list of: arxiv, semanticscholar, openalex, scopus "
+                         "(scopus needs SCOPUS_API_KEY)")
     ap.add_argument("--queries", default=None,
                     help="';'-separated search queries (default: planned automatically)")
     ap.add_argument("--n-queries", type=int, default=6, help="queries to plan with the LLM")
@@ -92,7 +150,10 @@ def main(argv=None):
     ap.add_argument("--from-json", default=None, help="reuse papers.json from a previous run")
     ap.add_argument("--no-embed-bib", action="store_true",
                     help="don't embed refs.bib inside the .tex (a separate refs.bib is always written)")
-    ap.add_argument("--pdf", action="store_true", help="compile with pdflatex+bibtex if available")
+    ap.add_argument("--pdf", action="store_true",
+                    help="compile with pdflatex+bibtex (or tectonic) if available")
+    ap.add_argument("--pdf-only", action="store_true",
+                    help="only (re)build the PDF from an existing <out>/survey.tex and exit")
     ap.add_argument("--no-cache", action="store_true")
     ap.add_argument("-v", "--verbose", action="store_true")
     ap.add_argument("--version", action="version", version=__version__)
@@ -101,12 +162,26 @@ def main(argv=None):
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)-7s %(message)s", datefmt="%H:%M:%S")
     out = Path(a.out or f"survey_{slug(a.topic)}")
+    if a.pdf_only:
+        tex_path = out / "survey.tex"
+        if not tex_path.exists():
+            raise SystemExit(f"{tex_path} not found; run without --pdf-only first.")
+        if not compile_pdf(tex_path):
+            raise SystemExit(1)
+        log.info("wrote %s", out / "survey.pdf")
+        return
+    sources = [s.strip().lower() for s in a.sources.split(",") if s.strip()]
+    unknown = [s for s in sources if s not in SOURCES]
+    if unknown:
+        ap.error(f"unknown source(s) {unknown}; choose from {', '.join(SOURCES)}")
+    if "scopus" in sources and not scopus_key():
+        ap.error("--sources includes scopus but SCOPUS_API_KEY is not set "
+                 "(get a key at https://dev.elsevier.com)")
     out.mkdir(parents=True, exist_ok=True)
     llm = LLM(a.llm, model=a.model, base_url=a.base_url)
     if llm.enabled:
         log.info("checking %s access (model %s) ...", a.llm, llm.model)
         llm.check()
-    sources = [s.strip() for s in a.sources.split(",") if s.strip()]
     open_only = not a.include_closed
 
     # 1. plan + search

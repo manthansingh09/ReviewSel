@@ -10,7 +10,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from litsurvey import sources
 from litsurvey.latexutil import build_bib, make_keys, sanitize_llm_latex, validate_citations
 from litsurvey.models import Paper
-from litsurvey.sources import deduplicate, parse_arxiv_feed, parse_openalex_item, parse_s2_item
+from litsurvey.sources import (_scopus_query, deduplicate, parse_arxiv_feed, parse_openalex_item,
+                               parse_s2_item, parse_scopus_entry)
 
 ARXIV_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
@@ -53,6 +54,30 @@ OA_ITEM = {"display_name": "Dense Passage Retrieval for Open-Domain Question Ans
            "open_access": {"is_oa": True, "oa_url": "https://aclanthology.org/x.pdf"},
            "cited_by_count": 3000}
 
+SCOPUS_ENTRY = {"dc:title": "Dense Passage Retrieval for Open-Domain Question Answering",
+                "author": [{"given-name": "Vladimir", "surname": "Karpukhin", "authname": "Karpukhin V."},
+                           {"given-name": "Barlas", "surname": "Oguz", "authname": "Oguz B."}],
+                "dc:creator": "Karpukhin V.", "prism:publicationName": "Proceedings of EMNLP 2020",
+                "prism:coverDate": "2020-11-16", "prism:doi": "10.18653/V1/2020.EMNLP-MAIN.550",
+                "prism:pageRange": "6769-6781", "citedby-count": "3100",
+                "prism:aggregationType": "Conference Proceeding",
+                "subtypeDescription": "Conference Paper", "openaccess": "1", "openaccessFlag": True,
+                "link": [{"@ref": "scopus", "@href": "https://www.scopus.com/x"}]}
+
+
+def test_scopus():
+    s = parse_scopus_entry(SCOPUS_ENTRY)
+    assert s.venue_type == "conference" and s.year == 2020 and s.citations == 3100
+    assert s.pages == "6769--6781" and s.authors == ["Vladimir Karpukhin", "Barlas Oguz"]
+    assert s.doi == "10.18653/v1/2020.emnlp-main.550" and s.is_open and s.sources == {"scopus"}
+    std = parse_scopus_entry({k: v for k, v in SCOPUS_ENTRY.items() if k != "author"})
+    assert std.authors == ["Karpukhin V."]
+    merged = deduplicate([parse_openalex_item(OA_ITEM), s])
+    assert len(merged) == 1 and merged[0].sources == {"openalex", "scopus"}
+    q = _scopus_query('k-means "image segmentation" for big data', 2019, True)
+    assert q == ('TITLE-ABS-KEY(k-means AND "image segmentation" AND big AND data) '
+                 "AND PUBYEAR > 2018 AND OPENACCESS(1)"), q
+
 
 def test_parsers_and_dedup():
     a = parse_arxiv_feed(ARXIV_XML)
@@ -85,6 +110,11 @@ def test_bib_and_sanitizer():
     assert "\\textbf{Key idea}" in body and "5\\%" in body and "R\\&D\\_tasks" in body
     assert "$x_i^2$" in body and "\\subsection{Oops}" in body and "```" not in body
     assert "\\cite{lewis2020retrieval}" in body and set(removed) == {"fake2023paper", "made2021up"}
+    # LLM output cut off mid-citation, \\| outside math, a lone $: all must still compile
+    body = sanitize_llm_latex("the $k$-means\\| method costs 5$ \\cite{lewis2020retrieval,lew")
+    body, removed = validate_citations(body, {p.key for p in ps})
+    assert body.endswith("\\cite{lewis2020retrieval}") and removed == ["lew"]
+    assert "$k$-means$\\|$" in body and "5\\$" in body
 
 
 def synthetic_corpus(n_per=12, seed=0):
@@ -185,6 +215,7 @@ def test_llm_path(tmp=Path(__file__).parent / "_out_llm"):
 
 if __name__ == "__main__":
     test_parsers_and_dedup()
+    test_scopus()
     test_bib_and_sanitizer()
     test_end_to_end()
     test_llm_path()
