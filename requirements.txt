@@ -1,0 +1,4 @@
+requests>=2.28
+numpy>=1.23
+scikit-learn>=1.1
+pylatexenc>=2.10   # optional: better Unicode -> LaTeX for author names/titles

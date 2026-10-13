@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.cache/
+
+# Local environment and editor files
+.venv/
+venv/
+.idea/
+.vscode/

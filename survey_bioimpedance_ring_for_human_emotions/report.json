@@ -1,0 +1,32 @@
+{
+  "topic": "Bioimpedance Ring for Human Emotions",
+  "queries": [
+    "Bioimpedance Ring for Human Emotions",
+    "bioimpedance wearable ring sensor",
+    "galvanic skin response emotion recognition",
+    "wearable affective computing physiological signals",
+    "electrodermal activity emotion classification",
+    "ring-form biosensor vital signs",
+    "machine learning emotion detection wearables"
+  ],
+  "stats": {
+    "openalex": 420,
+    "semanticscholar": 0,
+    "total_retrieved": 420,
+    "after_dedup": 393,
+    "after_open_filter": 393
+  },
+  "papers_included": 100,
+  "themes": {
+    "Machine Learning Approaches to Emotion Recognition": 33,
+    "GSR and ECG-Based Emotion Recognition": 22,
+    "Electrodermal Activity for Affective Computing": 15,
+    "Wearable Deep Learning for Emotion Classification": 11,
+    "Wearable Vital Sign Monitoring Technologies": 8,
+    "Physiological Biomarkers in Affective Computing": 6,
+    "Bioimpedance Sensing for Physiological Measurement": 5
+  },
+  "uncited_papers": [],
+  "hallucinated_citations_removed": [],
+  "llm": "anthropic:claude-sonnet-5"
+}
